@@ -1,0 +1,158 @@
+# --- 1. Setup & Encoding ---
+# Ensures PowerShell handles Unicode characters properly (emojis, etc.)
+[Console]::InputEncoding  = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+chcp 65001 > $null
+
+# --- 2. Custom Aliases ---
+# Set 'ls' to 'lsd' if you have it installed, otherwise falls back to default
+if (Get-Command lsd -ErrorAction SilentlyContinue) {
+    Set-Alias -Name ls -Value lsd -Option AllScope -Force
+}
+
+# --- 3. Prompt Styling (Oh My Posh) ---
+# If Oh My Posh is installed, load your favorite theme
+if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
+    oh-my-posh init pwsh --config "$env:LOCALAPPDATA\Programs\oh-my-posh\themes\jandedobbeleer.omp.json" | Invoke-Expression
+}
+
+# --- 4. Terminal Icons ---
+# Loads icons for folders and files in the terminal
+if (Get-Module -ListAvailable Terminal-Icons) {
+    Import-Module Terminal-Icons
+}
+
+# --- 5. ReadLine & Prediction (Autocomplete) ---
+if (Get-Module -ListAvailable PSReadLine) {
+    Import-Module PSReadLine
+    Set-PSReadLineOption -PredictionSource History
+    Set-PSReadLineOption -PredictionViewStyle ListView
+    Set-PSReadLineKeyHandler -Key Tab -Function MenuComplete
+    Set-PSReadLineKeyHandler -Key Ctrl+r -Function ReverseSearchHistory
+}
+
+# --- 6. Profile Management ---
+# Quickly reload or edit your profile
+function reload-profile { 
+    . $PROFILE
+    Write-Host "Profile reloaded." -ForegroundColor Green
+}
+function vim-profile { 
+    notepad $PROFILE
+}
+
+# --- 7. System Functions ---
+# Get your external IP address
+function get-ip {
+    try {
+        (Resolve-DnsName -Name "myip.opendns.com" -Server "resolver1.opendns.com" -Type A).IPAddress
+    } catch {
+        (Resolve-DnsName -Name "o-o.myaddr.l.google.com" -Server "ns1.google.com" -Type TXT).Strings
+    }
+}
+
+# Get the system uptime
+function uptime { 
+    (Get-Date) - (Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime 
+}
+
+# Check disk space (similar to Linux 'df')
+function df {
+    Get-PSDrive -PSProvider FileSystem |
+        Where-Object { $_.Used -gt 0 } |
+        Select-Object Name,
+            @{Name="Used(GB)";Expression={[math]::Round($_.Used / 1GB, 2)}},
+            @{Name="Free(GB)";Expression={[math]::Round($_.Free / 1GB, 2)}},
+            @{Name="Total(GB)";Expression={[math]::Round(($_.Used + $_.Free) / 1GB, 2)}}
+}
+
+# --- 8. Update Functions ---
+# Helper function to check if a command exists
+function Test-Cmd { param([string]$Name) [bool](Get-Command $Name -ErrorAction SilentlyContinue) }
+
+# Update Winget and Scoop simultaneously
+function syu {
+    Write-Host "Fetching Winget updates..." -ForegroundColor Cyan
+    if (Test-Cmd winget) { winget upgrade --all }
+    
+    Write-Host "Fetching Scoop updates..." -ForegroundColor Cyan
+    if (Test-Cmd scoop) { scoop update --all }
+    
+    Write-Host "All upgrades completed!" -ForegroundColor Magenta
+}
+
+# --- 9. Networking Tools ---
+# Reset the entire Windows network stack
+function net-reset {
+    Write-Host "Resetting Network Stack..." -ForegroundColor Cyan
+    ipconfig /release
+    ipconfig /renew
+    ipconfig /flushdns
+    netsh winsock reset
+    netsh int ip reset
+    netsh advfirewall reset
+    arp -d
+    Write-Host "Network stack reset complete. Please restart your computer." -ForegroundColor Green
+}
+
+# --- 10. The Chris Titus Tech Tool ---
+# Downloads and runs the Windows utility script safely
+function CTT {
+    $scriptPath = "$env:TEMP\CTT.ps1"
+    # (Note: Hardcoded hash removed for generic use. It's safer to check hash on your own PC)
+    Invoke-WebRequest -Uri "https://christitus.com/win" -OutFile $scriptPath
+    & $scriptPath
+}
+
+# --- 11. Utilities ---
+# Generate a random secure password and copy it to clipboard
+function pw {
+    param([int]$Length = 20)
+    $chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+[]{};:,.<>?"
+    $bytes = [byte[]]::new($Length)
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+    $password = -join ($bytes | ForEach-Object { $chars[$_ % $chars.Length] })
+    $password | Set-Clipboard
+    Write-Host "Generated password copied to clipboard." -ForegroundColor Green
+}
+
+# Check local weather via wttr.in (Replace the number with your postcode)
+function wttr { 
+    Invoke-RestMethod -Uri "https://wttr.in/your_postcode" -UseBasicParsing 
+}
+
+# --- 12. The "Affirmations" ---
+# A nice little self-care function because you are a masterpiece in progress
+function affirm {
+    $affirmations = @(
+        "You're doing great, princess 🩷",
+        "Your hair looks amazing today ✨",
+        "You're valid, you're loved, and you're enough 💖",
+        "You're not a mess, you're a masterpiece in progress 🌸",
+        "Take a deep breath. You've got this. 🩷",
+        "It's okay to be soft. It's okay to be strong. You're both. 💫",
+        "You deserve peace, joy, and a warm drink 🥺"
+    )
+    Write-Host "✨ $($affirmations | Get-Random) ✨" -ForegroundColor Magenta
+}
+
+# --- 13. Quick Menu ---
+# Shows a neat list of all the functions you made
+function lf {
+    $funcs = @(Get-Command -Type Function | Where-Object { $_.Name -notin @("lf", "Test-Cmd", "prompt") } | Select-Object -ExpandProperty Name)
+    Write-Host "╔════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host "║                CUSTOM FUNCTIONS                    ║" -ForegroundColor Cyan
+    Write-Host "╠════════════════════════════════════════════════════╣" -ForegroundColor Cyan
+    foreach ($name in $funcs) {
+        Write-Host ("║  {0,-48}  ║" -f $name) -ForegroundColor Cyan
+    }
+    Write-Host "╚════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+}
+
+# --- 14. Welcome Screen ---
+# Run a fancy fetch tool on startup to show off your system
+if (Get-Command fastfetch -ErrorAction SilentlyContinue) {
+    fastfetch
+}
